@@ -1308,8 +1308,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
         bottom: {
           type: 'tabs',
           tabs: [
-            { value: 'catalog', label: 'Cat?logo' },
-            { value: 'genres', label: 'G?neros' }
+            { value: 'catalog', label: 'Catalogo' },
+            { value: 'genres', label: 'Generos' }
           ],
           value: section,
           onChange: 'section',
@@ -1353,7 +1353,13 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
             onTrailingTap: 'search'
           }]
         }] : []),
-        { type: 'Column', gap: 16, children: bodyChildren }
+        {
+  type: 'Column',
+  fill: true,
+  align: 'stretch',
+  gap: 16,
+  children: bodyChildren
+}
       ]
     }
   };
