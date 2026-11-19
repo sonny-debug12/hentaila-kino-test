@@ -1230,7 +1230,7 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       ]}
     ];
   } else if (section === 'catalog') {
-    if (heroItem) {
+    if (false && heroItem) {
       bodyChildren.push({
         type: 'heroCard',
         title: heroItem.title,
@@ -1304,11 +1304,24 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       type: 'AppBar',
       dense: true,
       title: 'Veo Hentai',
+      ...(isTv ? {
+        bottom: {
+          type: 'tabs',
+          tabs: [
+            { value: 'catalog', label: 'Cat?logo' },
+            { value: 'genres', label: 'G?neros' }
+          ],
+          value: section,
+          onChange: 'section',
+          divider: false
+        }
+      } : {}),
       actions: [
         { type: 'IconButton', icon: 'search', labelText: 'Buscar', labelTextEn: 'Search',
           onPressed: { event: 'open-search' } }
       ]
     },
+    ...(isTv ? {} : {
     bottomNavigationBar: {
       type: 'NavigationBar',
       value: section,
@@ -1317,7 +1330,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
         { key: 'catalog', icon: 'home',  label: 'Catálogo', labelEn: 'Catalog' },
         { key: 'genres',  icon: 'list',  label: 'Géneros',  labelEn: 'Genres'  }
       ]
-    },
+    }
+    }),
     body: {
       type: 'SingleChildScrollView',
       children: [
