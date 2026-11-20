@@ -1304,12 +1304,20 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       type: 'AppBar',
       dense: true,
       title: 'Veo Hentai',
+      mergeWithKinoBar: true,
+      leading: {
+        type: 'IconButton',
+        icon: 'arrow_back',
+        labelText: 'Cerrar',
+        labelTextEn: 'Close',
+        onPressed: { event: 'close-screen' }
+      },
       ...(isTv ? {
         bottom: {
           type: 'tabs',
           tabs: [
-            { value: 'catalog', label: 'Catalogo' },
-            { value: 'genres', label: 'Generos' }
+            { value: 'catalog', label: 'Catálogo' },
+            { value: 'genres', label: 'Géneros' }
           ],
           value: section,
           onChange: 'section',
@@ -1354,23 +1362,11 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
           }]
         }] : []),
         {
-  type: 'Box',
+  type: 'Column',
   fill: true,
-  background: 'surface',
-  padding: 16,
+  align: 'stretch',
   gap: 16,
-  children: [
-    {
-      type: 'Box',
-      fill: true,
-      background: 'surfaceVariant',
-      border: { width: 1, color: 'primaryContainer' },
-      elevation: 3,
-      padding: 12,
-      gap: 16,
-      children: bodyChildren
-    }
-  ]
+  children: bodyChildren
 }
       ]
     }
@@ -1378,6 +1374,9 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
 }
 
 export async function screenEvent({ name, value, arg, state = {} }) {
+  if (name === 'close-screen') {
+    return { close: true };
+  }
   if (name === 'open-search') {
     return { state: { ...state, searchOpen: true }, focus: 'query' };
   }
