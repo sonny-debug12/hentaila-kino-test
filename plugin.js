@@ -1354,11 +1354,23 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
           }]
         }] : []),
         {
-  type: 'Column',
+  type: 'Box',
   fill: true,
-  align: 'stretch',
+  background: 'surface',
+  padding: 16,
   gap: 16,
-  children: bodyChildren
+  children: [
+    {
+      type: 'Box',
+      fill: true,
+      background: 'surfaceVariant',
+      border: { width: 1, color: 'primaryContainer' },
+      elevation: 3,
+      padding: 12,
+      gap: 16,
+      children: bodyChildren
+    }
+  ]
 }
       ]
     }

@@ -2,7 +2,7 @@
   "id": "veohentai",
   "name": "Veo Hentai",
   "version": "2.1.0",
-  "apiVersion": 14,
+  "apiVersion": 19,
   "entry": "plugin.js",
   "description": "Catálogo de VeoAnime con reproducción desde Hentaila.com y Hentaila.tv.",
   "author": "moore-debug12",
