@@ -1243,7 +1243,7 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       });
     }
     for (const row of rows) {
-      bodyChildren.push({ type: 'titleRail', title: row.title, items: row.items, size: 'small' });
+      bodyChildren.push({ type: 'titleRail', title: row.title, items: row.items, size: 'medium' });
     }
     if (rows.length === 0) {
       bodyChildren.push({ type: 'loading' });
