@@ -795,28 +795,6 @@ async function fromVoe(url) {
 
 // Conserva aquí tu función withSubtitle original sin modificarla.
 
-async function fromVip(url) {
-  const target = new URL(url);
-
-  if (
-    target.protocol !== "https:" ||
-    target.hostname !== "cdn.dotanborito.net" ||
-    !/^\/play\/[a-z0-9_-]+\/?$/i.test(target.pathname)
-  ) {
-    throw new Error("URL de Hentaila VIP inválida");
-  }
-
-  target.pathname = target.pathname.replace(/^\/play\//i, "/m3u8/");
-
-  const file = target.href;
-
-  return {
-    url: file,
-    mime: mimeOf(file),
-    headers: { Referer: HENTAILA_COM + "/" }
-  };
-}
-
 async function playServer(entry, referer) {
   if (typeof entry === "string") {
     if (/voe\.sx\/e\//i.test(entry)) {
@@ -953,52 +931,33 @@ async function resolveHentailaCom(slug, num, title) {
     /voe/i.test(server.server) || /voe\.sx\/e\//i.test(server.url)
   );
 
-  const vip = servers.find(server =>
-    /vip/i.test(server.server) || /cdn\.dotanborito\.net\/play\//i.test(server.url)
-  );
-
-  if (!voe && !vip) {
-    throw new Error("Hentaila.com no entregó servidores VOE ni VIP");
+  if (!voe) {
+    throw new Error("Hentaila.com no entregó servidor Voe");
   }
 
-  let stream;
-  let usedVoe = false;
+ const yourupload = servers.find(server => /yourupload/i.test(server.server) || /yourupload/i.test(server.url));
 
-  if (voe) {
-    try {
-      log("Hentaila.com: intentando servidor Voe");
-      stream = await fromVoe(voe.url);
-      usedVoe = true;
-    } catch (e) {
-      log("VOE falló; probando VIP", e.message);
-    }
-  }
-
-  if (!stream && vip) {
-    log("Hentaila.com: usando servidor VIP");
-    stream = await fromVip(vip.url);
-  }
-
-  if (!stream) {
-    throw new Error("No se pudo reproducir desde VOE ni VIP");
-  }
-
-  if (vip && usedVoe) {
-    stream = {
-      ...stream,
-      alternatives: [
-        ...(stream.alternatives || []),
-        {
-          label: "Hentaila VIP",
-          ref: "i~" + encodeRef(vip.url)
-        }
-      ]
-    };
-  }
-
+try {
+  log("Hentaila.com: intentando VOE");
+  const stream = await fromVoe(voe.url);
+  const probe = await kino.fetch(stream.url, {
+    headers: { ...(stream.headers || {}), Range: "bytes=0-0" },
+    maxBytes: 1,
+    timeoutMs: TIMEOUT
+  });
+  if (!probe.ok) throw new Error("Video VOE ca?do: HTTP " + probe.status);
+  if (yourupload) stream.alternatives = [{ label: "YourUpload", ref: "y~" + encodeRef(yourupload.url) }];
   return stream;
+} catch (voeError) {
+  log("VOE fall?; intentando YourUpload: " + voeError.message);
+  if (!yourupload) throw voeError;
+  const cap = await kino.browser.capture(yourupload.url, { headers: { Referer: HENTAILA_COM + "/" } });
+  const media = cap?.media?.find(item => item.url);
+  if (!media) throw new Error("VOE fall? y YourUpload no entreg? el video");
+  return { url: media.url, mime: media.mime || mimeOf(media.url), headers: { Referer: new URL(yourupload.url).origin + "/", ...(media.headers || {}) } };
 }
 
+}
 
 // ---- Hentaila.tv ------------------------------------------------------------
 
@@ -1175,18 +1134,6 @@ async function resolveHentailaTv(slug, num) {
 export async function resolve(ref) {
   const parts = String(ref || "").split("~");
 
-  // Selección directa del servidor VIP de Hentaila.com.
-  if (parts[0] === "i" && parts[1]) {
-    try {
-      const url = decodeRef(parts.slice(1).join("~"));
-      const stream = await fromVip(url);
-      return { ...stream, label: "Hentaila VIP" };
-    } catch (e) {
-      log("Falló servidor VIP", e.message);
-      throw kino.error("unavailable", e.message);
-    }
-  }
-
   // Servidor alternativo de Hentaila.com.
   if (parts[0] === "p") {
     let dataId;
@@ -1202,6 +1149,34 @@ export async function resolve(ref) {
       return await playServer(entry, HENTAILA_COM + "/");
     } catch (e) {
       log("Falló servidor alternativo", e.message);
+      throw kino.error("unavailable", e.message);
+    }
+  }
+
+  // Servidor alternativo YourUpload.
+  if (parts[0] === "y") {
+    let url;
+    try {
+      url = decodeRef(parts.slice(1).join("~"));
+    } catch {
+      throw kino.error("not_found", "URL de YourUpload inválida");
+    }
+    try {
+      const cap = await kino.browser.capture(url, {
+        headers: { Referer: HENTAILA_COM + "/" }
+      });
+      const media = cap?.media?.find(item => item.url);
+      if (!media) throw new Error("YourUpload no entregó el video");
+      return {
+        url: media.url,
+        mime: media.mime || mimeOf(media.url),
+        headers: {
+          Referer: new URL(url).origin + "/",
+          ...(media.headers || {})
+        }
+      };
+    } catch (e) {
+      log("Falló YourUpload", e.message);
       throw kino.error("unavailable", e.message);
     }
   }
