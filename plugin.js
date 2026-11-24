@@ -730,14 +730,36 @@ async function fromVoe(url) {
 
   if (!idM) throw new Error("ID de VOE inválido");
 
-  const pageUrl = "https://arianathankspecial.com/e/" + idM[1];
-  const html = await getText(pageUrl, "https://arianathankspecial.com/");
+  let pageUrl = url;
+  let blobM = null;
+  const visited = new Set();
 
-  const blobM =
-    /<script type="application\/json">\s*(\[[\s\S]*?\])\s*<\/script>/i.exec(html);
+  for (let i = 0; i < 10; i++) {
+    if (visited.has(pageUrl)) throw new Error("VOE: ciclo de redirecciones");
+    visited.add(pageUrl);
 
-  if (!blobM) throw new Error("VOE no entregó datos");
+    const html = await getText(pageUrl, new URL(pageUrl).origin + "/");
 
+    blobM =
+      /<script type="application\/json">\s*(\[[\s\S]*?\])\s*<\/script>/i.exec(html);
+
+    if (blobM) break;
+
+    const redirectM =
+      /(?:window\.)?location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i.exec(html);
+
+    if (!redirectM) throw new Error("VOE no entregó datos ni redirección");
+
+    const nextUrl = new URL(redirectM[1], pageUrl);
+
+    if (nextUrl.protocol !== "https:" || !/\/e\/[a-z0-9]+/i.test(nextUrl.pathname)) {
+      throw new Error("VOE: redirección no válida");
+    }
+
+    pageUrl = nextUrl.href;
+  }
+
+  if (!blobM) throw new Error("VOE: demasiadas redirecciones");
   const list = JSON.parse(blobM[1]);
   const encoded = Array.isArray(list) ? list[0] : null;
 
