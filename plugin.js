@@ -795,6 +795,28 @@ async function fromVoe(url) {
 
 // Conserva aquí tu función withSubtitle original sin modificarla.
 
+async function fromVip(url) {
+  const target = new URL(url);
+
+  if (
+    target.protocol !== "https:" ||
+    target.hostname !== "cdn.dotanborito.net" ||
+    !/^\/play\/[a-z0-9_-]+\/?$/i.test(target.pathname)
+  ) {
+    throw new Error("URL de Hentaila VIP inválida");
+  }
+
+  target.pathname = target.pathname.replace(/^\/play\//i, "/m3u8/");
+
+  const file = target.href;
+
+  return {
+    url: file,
+    mime: mimeOf(file),
+    headers: { Referer: HENTAILA_COM + "/" }
+  };
+}
+
 async function playServer(entry, referer) {
   if (typeof entry === "string") {
     if (/voe\.sx\/e\//i.test(entry)) {
@@ -931,12 +953,50 @@ async function resolveHentailaCom(slug, num, title) {
     /voe/i.test(server.server) || /voe\.sx\/e\//i.test(server.url)
   );
 
-  if (!voe) {
-    throw new Error("Hentaila.com no entregó servidor Voe");
+  const vip = servers.find(server =>
+    /vip/i.test(server.server) || /cdn\.dotanborito\.net\/play\//i.test(server.url)
+  );
+
+  if (!voe && !vip) {
+    throw new Error("Hentaila.com no entregó servidores VOE ni VIP");
   }
 
-  log("Hentaila.com: usando servidor Voe");
-  return await fromVoe(voe.url);
+  let stream;
+  let usedVoe = false;
+
+  if (voe) {
+    try {
+      log("Hentaila.com: intentando servidor Voe");
+      stream = await fromVoe(voe.url);
+      usedVoe = true;
+    } catch (e) {
+      log("VOE falló; probando VIP", e.message);
+    }
+  }
+
+  if (!stream && vip) {
+    log("Hentaila.com: usando servidor VIP");
+    stream = await fromVip(vip.url);
+  }
+
+  if (!stream) {
+    throw new Error("No se pudo reproducir desde VOE ni VIP");
+  }
+
+  if (vip && usedVoe) {
+    stream = {
+      ...stream,
+      alternatives: [
+        ...(stream.alternatives || []),
+        {
+          label: "Hentaila VIP",
+          ref: "i~" + encodeRef(vip.url)
+        }
+      ]
+    };
+  }
+
+  return stream;
 }
 
 
@@ -1114,6 +1174,18 @@ async function resolveHentailaTv(slug, num) {
 
 export async function resolve(ref) {
   const parts = String(ref || "").split("~");
+
+  // Selección directa del servidor VIP de Hentaila.com.
+  if (parts[0] === "i" && parts[1]) {
+    try {
+      const url = decodeRef(parts.slice(1).join("~"));
+      const stream = await fromVip(url);
+      return { ...stream, label: "Hentaila VIP" };
+    } catch (e) {
+      log("Falló servidor VIP", e.message);
+      throw kino.error("unavailable", e.message);
+    }
+  }
 
   // Servidor alternativo de Hentaila.com.
   if (parts[0] === "p") {
