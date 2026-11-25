@@ -370,10 +370,6 @@ export async function search(query) {
     })
   );
 
-  if (answers.every(a => a === null)) {
-    throw kino.error("unavailable", "el sitio no respondió");
-  }
-
   const found = [];
   const seen = new Set();
 
@@ -385,6 +381,43 @@ export async function search(query) {
       seen.add(c.slug);
       found.push(c);
     }
+  }
+
+  // Respaldo de búsqueda Hentaila.com
+  if (!found.length) {
+    const hentailaFound = [];
+    const hentailaSeen = new Set();
+
+    for (const term of terms) {
+      try {
+        for (const c of await searchHentailaCatalog(term)) {
+          if (hentailaSeen.has(c.slug)) continue;
+          hentailaSeen.add(c.slug);
+          hentailaFound.push(c);
+        }
+      } catch (e) {
+        log("Respaldo de búsqueda Hentaila.com falló", term, e.message);
+      }
+    }
+
+    if (hentailaFound.length) {
+      const relevantH = kino.rank.filterRelevant(hentailaFound, terms, c => c.title);
+      const keptH = relevantH.length ? relevantH : hentailaFound;
+      const sortedH = kino.rank.sortBySimilarity(keptH, terms, c => c.title);
+
+      return sortedH.slice(0, MAX_ITEMS).map(c => ({
+        id: "h~" + c.slug,
+        ref: "h~" + c.slug,
+        title: c.title,
+        kind: "series",
+        poster: c.poster,
+        genres: ["anime"]
+      }));
+    }
+  }
+
+  if (answers.every(a => a === null)) {
+    throw kino.error("unavailable", "ninguno de los catálogos respondió");
   }
 
   const relevant = kino.rank.filterRelevant(found, terms, c => c.title);
@@ -493,6 +526,30 @@ export async function episodes(ref) {
 
   const parts = String(ref || "").split("~");
   const slug = parts[1] || "";
+
+  // Ficha y episodios de Hentaila.com
+  if (parts[0] === "h" && slug) {
+    const url = HENTAILA_COM + "/media/" + slug;
+    const html = await getText(url, HENTAILA_COM + "/");
+    const titleM = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+    const seriesName = clean(titleM ? titleM[1] : slug.replace(/-/g, " "), 200);
+    const poster = extractImage(html, url);
+    const list = parseHentailaEpisodes(html, slug, seriesName);
+
+    if (!list.length) {
+      throw kino.error("not_found", "esa serie no tiene episodios");
+    }
+
+    return {
+      series: {
+        title: seriesName,
+        poster,
+        genres: ["anime"]
+      },
+      episodes: list
+    };
+  }
+
 
   if (parts[0] !== "s" || !slug) {
     throw kino.error("not_found", "esa serie ya no existe");
@@ -901,6 +958,70 @@ async function findHentailaSlug(title) {
   return best.slug;
 }
 
+
+function parseHentailaCards(html) {
+  const re = /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/(?:www\.)?hentaila\.com)?\/media\/([^"'\/\s?#]+)\1/gi;
+  const marks = [];
+  let m;
+
+  while ((m = re.exec(html))) marks.push({ slug: m[2], at: m.index });
+
+  const out = [];
+  const seen = new Set();
+
+  for (let i = 0; i < marks.length; i++) {
+    const { slug, at } = marks[i];
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+
+    const next = marks[i + 1]?.at || at + 2500;
+    const chunk = html.slice(at, next);
+    const before = html.slice(Math.max(0, at - 1200), at);
+    const titles = [...(before + chunk).matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi)];
+
+    out.push({
+      slug,
+      title: clean(titles.at(-1)?.[1] || slug.replace(/-/g, " "), 200),
+      poster: extractImage(before, HENTAILA_COM + "/") ||
+        extractImage(chunk, HENTAILA_COM + "/")
+    });
+  }
+
+  return out;
+}
+
+async function searchHentailaCatalog(query) {
+  const url = "https://www5.hentaila.com/catalogo?search=" + encodeURIComponent(query);
+  return parseHentailaCards(await getText(url, HENTAILA_COM + "/"));
+}
+
+function parseHentailaEpisodes(html, slug, title) {
+  const re = /<a\b[^>]*href\s*=\s*(["'])\/media\/([^"'\/?#]+)\/(\d+)\/?\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const episodes = [];
+  const seen = new Set();
+  let m;
+
+  while ((m = re.exec(html))) {
+    if (m[2] !== slug) continue;
+
+    const num = Number(m[3]);
+    if (!num || seen.has(num)) continue;
+    seen.add(num);
+
+    const nameM = /class=["'][^"']*sr-only[^"']*["'][^>]*>([\s\S]*?)<\/span>/i.exec(m[4]);
+
+    episodes.push({
+      season: 1,
+      number: num,
+      ref: "he~" + slug + "~" + num + "~" +
+        encodeURIComponent(title).replace(/~/g, "%7E"),
+      title: clean(nameM?.[1] || "Episodio " + num, 200)
+    });
+  }
+
+  return episodes.sort((a, b) => a.number - b.number).slice(0, MAX_EPISODES);
+}
+
 async function resolveHentailaCom(slug, num, title) {
   let cleanSlug = String(slug).replace(/^\/+|\/+$/g, "");
 
@@ -1196,6 +1317,44 @@ export async function resolve(ref) {
     } catch (e) {
       log("Hentaila.tv falló", e.message);
       throw kino.error("unavailable", e.message);
+    }
+  }
+
+  // Episodios procedentes del catálogo de Hentaila.com.
+  if (parts[0] === "he" && parts[1]) {
+    const slug = parts[1];
+    const num = Number(parts[2]) || 1;
+
+    try {
+      const stream = await resolveHentailaCom(slug, num);
+      const alternatives = (stream.alternatives || []).slice();
+
+      alternatives.push({
+        label: "Hentaila.tv",
+        ref: "t~" + slug + "~" + num
+      });
+
+      return {
+        ...stream,
+        label: "Hentaila COM",
+        alternatives
+      };
+    } catch (comError) {
+      log("Hentaila.com falló", comError.message);
+    }
+
+    try {
+      const stream = await resolveHentailaTv(slug, num);
+      return {
+        ...stream,
+        label: "Hentaila TV"
+      };
+    } catch (tvError) {
+      log("Hentaila.tv falló", tvError.message);
+      throw kino.error(
+        "unavailable",
+        "No se pudo obtener el video desde ninguno de los reproductores"
+      );
     }
   }
 
