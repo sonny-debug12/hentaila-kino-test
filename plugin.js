@@ -384,7 +384,7 @@ export async function search(query) {
   }
 
   // Respaldo de búsqueda Hentaila.com
-  if (!found.length) {
+  if (!kino.rank.filterRelevant(found, terms, c => c.title).length) {
     const hentailaFound = [];
     const hentailaSeen = new Set();
 
