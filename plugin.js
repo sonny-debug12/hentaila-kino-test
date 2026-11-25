@@ -306,6 +306,18 @@ function catalogItems(cards) {
   const seriesMap = new Map();
 
   for (const c of cards) {
+    if (c.source === "hentaila") {
+      result.push({
+        id: "h~" + c.slug,
+        ref: "h~" + c.slug,
+        title: c.title,
+        kind: "series",
+        poster: c.poster,
+        genres: ["anime"]
+      });
+      continue;
+    }
+
     const ep = splitEpisode(c.slug);
 
     if (!ep) {
@@ -383,40 +395,43 @@ export async function search(query) {
     }
   }
 
-  // Respaldo de búsqueda Hentaila.com
-  if (!kino.rank.filterRelevant(found, terms, c => c.title).length) {
-    const hentailaFound = [];
-    const hentailaSeen = new Set();
+  // Catálogo combinado: VeoHentai + Hentaila.com
+  let hentailaResponded = false;
+  const hentailaSeen = new Set();
 
-    for (const term of terms) {
-      try {
-        for (const c of await searchHentailaCatalog(term)) {
-          if (hentailaSeen.has(c.slug)) continue;
-          hentailaSeen.add(c.slug);
-          hentailaFound.push(c);
+  const normalizeTitle = value =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  for (const term of terms) {
+    try {
+      const cards = await searchHentailaCatalog(term);
+      hentailaResponded = true;
+
+      for (const c of cards) {
+        const slugKey = String(c.slug || "").toLowerCase();
+        if (!slugKey || hentailaSeen.has(slugKey)) continue;
+        hentailaSeen.add(slugKey);
+
+        const key = normalizeTitle(c.title);
+        const duplicate = found.some(v =>
+          normalizeTitle(v.title) === key
+        );
+
+        if (!duplicate) {
+          found.push({ ...c, source: "hentaila" });
         }
-      } catch (e) {
-        log("Respaldo de búsqueda Hentaila.com falló", term, e.message);
       }
-    }
-
-    if (hentailaFound.length) {
-      const relevantH = kino.rank.filterRelevant(hentailaFound, terms, c => c.title);
-      const keptH = relevantH.length ? relevantH : hentailaFound;
-      const sortedH = kino.rank.sortBySimilarity(keptH, terms, c => c.title);
-
-      return sortedH.slice(0, MAX_ITEMS).map(c => ({
-        id: "h~" + c.slug,
-        ref: "h~" + c.slug,
-        title: c.title,
-        kind: "series",
-        poster: c.poster,
-        genres: ["anime"]
-      }));
+    } catch (e) {
+      log("Búsqueda Hentaila.com falló", term, e.message);
     }
   }
 
-  if (answers.every(a => a === null)) {
+  if (answers.every(a => a === null) && !hentailaResponded) {
     throw kino.error("unavailable", "ninguno de los catálogos respondió");
   }
 
