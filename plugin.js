@@ -418,9 +418,12 @@ export async function search(query) {
         hentailaSeen.add(slugKey);
 
         const key = normalizeTitle(c.title);
-        const duplicate = found.some(v =>
-          normalizeTitle(v.title) === key
-        );
+        const duplicate = found.some(v => {
+          const veoTitle = normalizeTitle(v.title);
+
+          return veoTitle === key ||
+            (key.split(" ").length >= 2 && veoTitle.startsWith(key + " "));
+        });
 
         if (!duplicate) {
           found.push({ ...c, source: "hentaila" });
