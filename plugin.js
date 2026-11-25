@@ -443,7 +443,11 @@ export async function search(query) {
 
   const sorted = kino.rank.sortBySimilarity(kept, terms, c => c.title);
 
-  return catalogItems(sorted).slice(0, MAX_ITEMS);
+  const result = catalogItems(sorted).slice(0, MAX_ITEMS);
+  log("DEBUG Cherry:", JSON.stringify(result.filter(x =>
+    String(x.ref || "").includes("cherry-and-gals")
+  )));
+  return result;
 }
 
 // ---- inicio -----------------------------------------------------------------
