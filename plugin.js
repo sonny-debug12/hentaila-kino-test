@@ -1,7 +1,7 @@
 const BASE = "https://veohentai.com";
 const PLAYER = "https://hentaiplayer.com";
 const TIMEOUT = 12000;
-const MAX_ITEMS = 60;
+const MAX_ITEMS = 70;
 const MAX_EPISODES = 3000;
 
 function log(...args) {
