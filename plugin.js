@@ -410,7 +410,6 @@ export async function search(query) {
   for (const term of terms) {
     try {
       const cards = await searchHentailaCatalog(term);
-      log("DEBUG Cherry CAT:", JSON.stringify(cards.filter(c => /cherry|gal/i.test(c.title + " " + c.slug))));
       hentailaResponded = true;
 
       for (const c of cards) {
@@ -439,11 +438,8 @@ export async function search(query) {
     throw kino.error("unavailable", "ninguno de los catálogos respondió");
   }
 
-
-  log("DEBUG Cherry FOUND:", JSON.stringify(found.filter(c => /cherry|gal/i.test(c.title + " " + c.slug))));
   const relevant = kino.rank.filterRelevant(found, terms, c => c.title);
   const kept = relevant.length ? relevant : found;
-  log("DEBUG Cherry FILTER:", JSON.stringify(relevant.filter(c => /cherry|gal/i.test(c.title + " " + c.slug))));
 
   const sorted = kino.rank.sortBySimilarity(kept, terms, c => c.title);
 
