@@ -420,6 +420,8 @@ export async function search(query) {
 
         const key = normalizeTitle(c.title);
         const duplicate = found.some(v => {
+          if (splitEpisode(v.slug)) return false;
+
           const veoTitle = normalizeTitle(v.title);
 
           return veoTitle === key ||
