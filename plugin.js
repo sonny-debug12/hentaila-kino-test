@@ -1425,6 +1425,8 @@ try {
 // Caché de sesión: las filas del catálogo son ~52 KB y el estado tope es 64 KB
 let rowsCache = null;
 let genresCache = null;
+let genreItemsCache = [];
+let genreCacheSlug = null;
 
 export async function screen({ state = {}, device = 'phone', size = 'compact' } = {}) {
   const isTv = device === 'tv';
@@ -1432,7 +1434,9 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
   const section = state.section === 'genres' ? 'genres' : 'catalog';
   const results = Array.isArray(state.results) ? state.results : [];
   const genres  = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : (genresCache || []);
-  const genreItems = Array.isArray(state.genreItems) ? state.genreItems : [];
+  const genreItems = state.selectedGenre && genreCacheSlug === state.selectedGenre
+    ? genreItemsCache
+    : (Array.isArray(state.genreItems) ? state.genreItems : []);
 
   // Las filas viven en la caché de sesión: volver al catálogo no vuelve a pedirlas
   let rows = Array.isArray(state.rows) ? state.rows : rowsCache;
@@ -1657,9 +1661,13 @@ export async function screenEvent({ name, value, arg, state = {} }) {
     try {
       const result = await getGenrePage(slug, 1);
       const selected = (state.genres || []).find(g => g.slug === slug);
+      genreItemsCache = result.items;
+      genreCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.genreItems;
       return {
         state: {
-          ...state,
+          ...cleanState,
           section: 'genres',
           selectedGenre: slug,
           selectedGenreTitle: selected?.title || slug,
@@ -1680,7 +1688,9 @@ export async function screenEvent({ name, value, arg, state = {} }) {
     const page  = Number(state.genrePage || 1) + 1;
     try {
       const result   = await getGenrePage(slug, page);
-      const existing = Array.isArray(state.genreItems) ? state.genreItems : [];
+      const existing = genreCacheSlug === slug
+        ? genreItemsCache
+        : (Array.isArray(state.genreItems) ? state.genreItems : []);
       const seen     = new Set(existing.map(i => i.id || i.ref || i.title));
       const added    = result.items.filter(i => {
         const k = i.id || i.ref || i.title;
@@ -1688,8 +1698,12 @@ export async function screenEvent({ name, value, arg, state = {} }) {
         seen.add(k);
         return true;
       });
+      genreItemsCache = [...existing, ...added];
+      genreCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.genreItems;
       return {
-        state: { ...state, genreItems: [...existing, ...added], genrePage: page,
+        state: { ...cleanState, genrePage: page,
                  genreHasMore: page < result.totalPages, genreLoadingMore: false }
       };
     } catch (e) {
@@ -1699,6 +1713,8 @@ export async function screenEvent({ name, value, arg, state = {} }) {
   }
 
   if (name === 'back-genres') {
+    genreItemsCache = [];
+    genreCacheSlug = null;
     return { state: { ...state, selectedGenre: null, genreItems: [] } };
   }
 
