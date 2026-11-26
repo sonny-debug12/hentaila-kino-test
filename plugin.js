@@ -1500,7 +1500,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
           { type: 'Text', text: state.selectedGenreTitle || 'Género', style: 'h3', flex: 1 }
         ]},
         ...(genreItems.length
-          ? [{ type: 'titleGrid', columns: cols, items: genreItems,
+          ? [{ type: 'list', columns: cols,
+               items: genreItems.map(item => ({ type: 'titleCard', item, size: 'medium' })),
                onEndReached: state.genreHasMore ? { event: 'genre-more' } : undefined,
                loadingMore: state.genreLoadingMore === true,
                done: !state.genreHasMore }]
