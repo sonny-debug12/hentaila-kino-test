@@ -982,33 +982,22 @@ async function findHentailaSlug(title) {
 
 
 function parseHentailaCards(html) {
-  const re = /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/(?:www\.)?hentaila\.com)?\/media\/([^"'\/\s?#]+)\1/gi;
-  const marks = [];
-  let m;
-
-  while ((m = re.exec(html))) marks.push({ slug: m[2], at: m.index });
-
+  const articles = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/gi) || [];
   const out = [];
   const seen = new Set();
-
-  for (let i = 0; i < marks.length; i++) {
-    const { slug, at } = marks[i];
+  for (const article of articles) {
+    const link = /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/(?:www\.)?hentaila\.com)?\/media\/([^"'\/\s?#]+)\1/i.exec(article);
+    if (!link) continue;
+    const slug = link[2];
     if (seen.has(slug)) continue;
     seen.add(slug);
-
-    const next = marks[i + 1]?.at || at + 2500;
-    const chunk = html.slice(at, next);
-    const before = html.slice(Math.max(0, at - 1200), at);
-    const titles = [...(before + chunk).matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3>/gi)];
-
+    const titleMatch = /<h3\b[^>]*>([\s\S]*?)<\/h3>/i.exec(article);
     out.push({
       slug,
-      title: clean(titles.at(-1)?.[1] || slug.replace(/-/g, " "), 200),
-      poster: extractImage(before, HENTAILA_COM + "/") ||
-        extractImage(chunk, HENTAILA_COM + "/")
+      title: clean(titleMatch?.[1] || slug.replace(/-/g, " "), 200),
+      poster: extractImage(article, HENTAILA_COM + "/")
     });
   }
-
   return out;
 }
 
