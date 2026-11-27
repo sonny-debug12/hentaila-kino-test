@@ -667,11 +667,17 @@ export async function episodes(ref) {
     ? null
     : /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
 
-  const normalizedSlug = slug.replace(/[-_]/g, "");
+  const normalizedSlug = slug.replace(/[-_]/g, "").toLowerCase();
 
   const matchingCards = parseCards(html, sourceUrl).filter(c => {
     const ep = splitEpisode(c.slug);
-    return ep && ep.slug.replace(/[-_]/g, "") === normalizedSlug;
+    if (!ep) return false;
+
+    const candidate = ep.slug.replace(/[-_]/g, "").toLowerCase();
+
+    return candidate === normalizedSlug ||
+      (candidate.startsWith(normalizedSlug) &&
+       /^\d+$/.test(candidate.slice(normalizedSlug.length)));
   });
 
   const seriesName = fromSearch
