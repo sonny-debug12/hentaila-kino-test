@@ -193,6 +193,44 @@ function parseGenres(html) {
   return genres;
 }
 
+
+function parseStudios(html) {
+  const studios = [];
+  const seen = new Set();
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/brand\/([^/"'?#]+)\/?)[^"']*\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+
+  while ((m = re.exec(html))) {
+    const slug = m[3];
+    if (!slug || seen.has(slug)) continue;
+
+    const block = m[4];
+    const titleMatch = /<h3\b[^>]*>([\s\S]*?)<\/h3>/i.exec(block);
+    if (!titleMatch) continue;
+
+    const title = clean(titleMatch[1], 100);
+    const countMatch = /<span\b[^>]*class=["'][^"']*\bnum\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i.exec(block);
+    const count = countMatch
+      ? Number(clean(countMatch[1], 20).replace(/[^0-9]/g, "")) || 0
+      : 0;
+
+    const imageMatch = /<img\b[^>]*>/i.exec(block);
+    const poster = imageMatch
+      ? imageUrl(
+          attr(imageMatch[0], "src") || attr(imageMatch[0], "data-src"),
+          BASE + "/estudios/"
+        )
+      : undefined;
+
+    if (!title) continue;
+
+    seen.add(slug);
+    studios.push({ slug, title, count, poster });
+  }
+
+  return studios;
+}
+
 function srcsetUrl(value) {
   if (!value) return "";
 
@@ -578,6 +616,12 @@ export async function getGenres() {
   return parseGenres(html);
 }
 
+
+export async function getStudios() {
+  const html = await getText(abs("/estudios/"), BASE + "/");
+  return parseStudios(html);
+}
+
 async function getGenrePage(slug, page = 1) {
   const value = String(slug || "").trim();
   if (!/^[a-z0-9-]+$/i.test(value)) throw new Error("Genero no valido");
@@ -594,6 +638,24 @@ async function getGenrePage(slug, page = 1) {
 export async function getGenreCatalog(slug, page = 1) {
   return (await getGenrePage(slug, page)).items;
 }
+
+async function getStudioPage(slug, page = 1) {
+  const value = String(slug || "").trim();
+  if (!/^[a-z0-9-]+$/i.test(value)) throw new Error("Estudio no valido");
+  const basePath = "/brand/" + value + "/";
+  const url = abs(page > 1 ? basePath + "page/" + page + "/" : basePath);
+  const html = await getText(url, BASE + "/");
+  const items = catalogItems(parseCards(html, url));
+  const re = new RegExp("page/([0-9]+)/", "g");
+  const links = [...html.matchAll(re)];
+  const totalPages = Math.max(page, 1, ...links.map(x => Number(x[1])));
+  return { items, totalPages };
+}
+
+export async function getStudioCatalog(slug, page = 1) {
+  return (await getStudioPage(slug, page)).items;
+}
+
 // ---- episodios --------------------------------------------------------------
 
 export async function episodes(ref) {
@@ -1521,16 +1583,23 @@ let rowsCache = null;
 let genresCache = null;
 let genreItemsCache = [];
 let genreCacheSlug = null;
+let studiosCache = null;
+let studioItemsCache = [];
+let studioCacheSlug = null;
 
 export async function screen({ state = {}, device = 'phone', size = 'compact' } = {}) {
   const isTv = device === 'tv';
   const cols = isTv ? 6 : { compact: 3, medium: 4, expanded: 5 };
-  const section = state.section === 'genres' ? 'genres' : 'catalog';
+  const section = state.section === 'genres' ? 'genres' : state.section === 'studios' ? 'studios' : 'catalog';
   const results = Array.isArray(state.results) ? state.results : [];
   const genres  = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : (genresCache || []);
   const genreItems = state.selectedGenre && genreCacheSlug === state.selectedGenre
     ? genreItemsCache
     : (Array.isArray(state.genreItems) ? state.genreItems : []);
+  const studios = Array.isArray(state.studios) && state.studios.length > 0 ? state.studios : (studiosCache || []);
+  const studioItems = state.selectedStudio && studioCacheSlug === state.selectedStudio
+    ? studioItemsCache
+    : (Array.isArray(state.studioItems) ? state.studioItems : []);
 
   // Las filas viven en la caché de sesión: volver al catálogo no vuelve a pedirlas
   let rows = Array.isArray(state.rows) ? state.rows : rowsCache;
@@ -1629,15 +1698,60 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       // La sección ya está pintada: el tick `hydrate-genres` trae la lista
       bodyChildren = [{ type: 'loading' }];
     }
+
+  } else if (section === 'studios') {
+    if (state.selectedStudio) {
+      bodyChildren = [
+        { type: 'Row', padding: 16, gap: 8, crossAxisAlignment: 'center', children: [
+          { type: 'IconButton', icon: 'arrow_back', labelText: 'Volver', labelTextEn: 'Back', onPressed: 'back-studios' },
+          { type: 'Text', text: state.selectedStudioTitle || 'Estudio', style: 'h3', flex: 1 }
+        ]},
+        ...(studioItems.length
+          ? [{ type: 'list', columns: cols,
+               items: studioItems.map(item => ({ type: 'titleCard', item, size: 'medium' })),
+               onEndReached: state.studioHasMore ? { event: 'studio-more' } : undefined,
+               loadingMore: state.studioLoadingMore === true,
+               done: !state.studioHasMore }]
+          : [state.studioLoadingMore
+              ? { type: 'loading' }
+              : { type: 'emptyState', title: 'Sin t?tulos', titleEn: 'No titles',
+                  text: 'Este estudio no tiene contenido disponible.',
+                  textEn: 'This studio has no content available.' }
+            ]
+        )
+      ];
+    } else if (studios.length > 0) {
+      bodyChildren = [
+        { type: 'Text', text: 'Explorar por estudio', textEn: 'Browse by studio',
+          style: 'h4', padding: 16 },
+        { type: 'Column', gap: 0, children: studios.map(studio => ({
+            type: 'ListTile',
+            key: 'studio-' + studio.slug,
+            title: studio.title + (studio.count ? ' (' + studio.count + ' episodios)' : ''),
+            dense: true,
+            onTap: { event: 'studio', arg: studio.slug }
+          })) }
+      ];
+    } else if (state.studiosError && state.studiosTried) {
+      bodyChildren = [{ type: 'errorState',
+        title: 'Error al cargar estudios', titleEn: 'Could not load studios',
+        text: 'Toca para reintentar.', textEn: 'Tap to retry.',
+        onRetry: 'retry-studios' }];
+    } else {
+      bodyChildren = [{ type: 'loading' }];
+    }
   }
 
+
   // Mientras falten los géneros, un tick los pide y la pantalla ya muestra su sección
-  const needsGenres = genres.length === 0 && !(state.genresTried === true && state.genresError === true);
+  const needsGenres = section === 'genres' && genres.length === 0 && !(state.genresTried === true && state.genresError === true);
+  const needsStudios = section === 'studios' && studios.length === 0 && !(state.studiosTried === true && state.studiosError === true);
+  const hydrationEvent = needsStudios ? 'hydrate-studios' : needsGenres ? 'hydrate-genres' : null;
 
   // ── Scaffold con AppBar + NavigationBar ─────────────────────────────────
   return {
     type: 'Scaffold',
-    ...(needsGenres ? { every: { ms: 1000, event: 'hydrate-genres' } } : {}),
+    ...(hydrationEvent ? { every: { ms: 1000, event: hydrationEvent } } : {}),
     appBar: {
       type: 'AppBar',
       dense: true,
@@ -1655,7 +1769,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
           type: 'tabs',
           tabs: [
             { value: 'catalog', label: 'Catálogo' },
-            { value: 'genres', label: 'Géneros' }
+            { value: 'genres', label: 'Géneros' },
+            { value: 'studios', label: 'Estudios' }
           ],
           value: section,
           onChange: 'section',
@@ -1674,7 +1789,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       onChanged: 'section',
       items: [
         { key: 'catalog', icon: 'home',  label: 'Catálogo', labelEn: 'Catalog' },
-        { key: 'genres',  icon: 'list',  label: 'Géneros',  labelEn: 'Genres'  }
+        { key: 'genres',  icon: 'list',  label: 'Géneros',  labelEn: 'Genres'  },
+        { key: 'studios', icon: 'list', label: 'Estudios', labelEn: 'Studios' }
       ]
     }
     }),
@@ -1722,7 +1838,8 @@ export async function screenEvent({ name, value, arg, state = {} }) {
   if (name === 'section') {
     // Cambia de sección al instante: si faltan datos, la pantalla pinta su spinner
     const base = { ...state, section: value, results: [], searched: false, searchOpen: false,
-                   selectedGenre: null, genreItems: [] };
+                   selectedGenre: null, genreItems: [],
+                   selectedStudio: null, studioItems: [] };
     if (value === 'genres') {
       const cached = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : genresCache;
       if (cached && cached.length > 0) {
@@ -1811,6 +1928,167 @@ export async function screenEvent({ name, value, arg, state = {} }) {
     genreItemsCache = [];
     genreCacheSlug = null;
     return { state: { ...state, selectedGenre: null, genreItems: [] } };
+  }
+
+
+  if (name === 'hydrate-studios') {
+    if (Array.isArray(state.studios) && state.studios.length > 0) return null;
+    try {
+      const studios = studiosCache && studiosCache.length > 0 ? studiosCache : await getStudios();
+      studiosCache = studios;
+      return { state: { ...state, studios, studiosLoading: false, studiosTried: true, studiosError: false } };
+    } catch (e) {
+      log('Carga de estudios fallida', e.message);
+      return { state: { ...state, studiosLoading: false, studiosTried: true, studiosError: true } };
+    }
+  }
+
+  if (name === 'retry-studios') {
+    return { state: { ...state, studios: [], studiosLoading: true, studiosTried: false, studiosError: false } };
+  }
+
+  if (name === 'studio') {
+    const slug = String(arg || '');
+    try {
+      const result = await getStudioPage(slug, 1);
+      const selected = (state.studios || []).find(studio => studio.slug === slug);
+      studioItemsCache = result.items;
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: {
+          ...cleanState,
+          section: 'studios',
+          selectedStudio: slug,
+          selectedStudioTitle: selected?.title || slug,
+          studioItems: result.items,
+          studioPage: 1,
+          studioHasMore: result.totalPages > 1,
+          studioLoadingMore: false
+        }
+      };
+    } catch (e) {
+      log('Carga de estudio fallida', e.message);
+      return { toast: 'No se pudo cargar ese estudio.' };
+    }
+  }
+
+  if (name === 'studio-more') {
+    const slug = String(state.selectedStudio || '');
+    const page = Number(state.studioPage || 1) + 1;
+    try {
+      const result = await getStudioPage(slug, page);
+      const existing = studioCacheSlug === slug
+        ? studioItemsCache
+        : (Array.isArray(state.studioItems) ? state.studioItems : []);
+      const seen = new Set(existing.map(i => i.id || i.ref || i.title));
+      const added = result.items.filter(i => {
+        const k = i.id || i.ref || i.title;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      studioItemsCache = [...existing, ...added];
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: {
+          ...cleanState,
+          studioPage: page,
+          studioHasMore: page < result.totalPages,
+          studioLoadingMore: false
+        }
+      };
+    } catch (e) {
+      log('Carga de m?s t?tulos del estudio fallida', e.message);
+      return { state: { ...state, studioLoadingMore: false }, toast: 'No se pudieron cargar m?s t?tulos.' };
+    }
+  }
+
+  if (name === 'back-studios') {
+    studioItemsCache = [];
+    studioCacheSlug = null;
+    return { state: { ...state, selectedStudio: null, studioItems: [] } };
+  }
+
+  if (name === 'hydrate-studios') {
+    if (Array.isArray(state.studios) && state.studios.length > 0) return null;
+    try {
+      const studios = studiosCache && studiosCache.length > 0 ? studiosCache : await getStudios();
+      studiosCache = studios;
+      return { state: { ...state, studios, studiosLoading: false, studiosTried: true, studiosError: false } };
+    } catch (e) {
+      log('Carga de estudios fallida', e.message);
+      return { state: { ...state, studiosLoading: false, studiosTried: true, studiosError: true } };
+    }
+  }
+
+  if (name === 'retry-studios') {
+    return { state: { ...state, studios: [], studiosLoading: true, studiosTried: false, studiosError: false } };
+  }
+
+  if (name === 'studio') {
+    const slug = String(arg || '');
+    try {
+      const result = await getStudioPage(slug, 1);
+      const selected = (state.studios || []).find(x => x.slug === slug);
+      studioItemsCache = result.items;
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: {
+          ...cleanState,
+          section: 'studios',
+          selectedStudio: slug,
+          selectedStudioTitle: selected?.title || slug,
+          studioItems: result.items,
+          studioPage: 1,
+          studioHasMore: result.totalPages > 1,
+          studioLoadingMore: false
+        }
+      };
+    } catch (e) {
+      log('Carga de estudio fallida', e.message);
+      return { toast: 'No se pudo cargar ese estudio.' };
+    }
+  }
+
+  if (name === 'studio-more') {
+    const slug = String(state.selectedStudio || '');
+    const page = Number(state.studioPage || 1) + 1;
+    try {
+      const result = await getStudioPage(slug, page);
+      const existing = studioCacheSlug === slug
+        ? studioItemsCache
+        : (Array.isArray(state.studioItems) ? state.studioItems : []);
+      const seen = new Set(existing.map(i => i.id || i.ref || i.title));
+      const added = result.items.filter(i => {
+        const k = i.id || i.ref || i.title;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      studioItemsCache = [...existing, ...added];
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: { ...cleanState, studioPage: page,
+                 studioHasMore: page < result.totalPages, studioLoadingMore: false }
+      };
+    } catch (e) {
+      log('Carga de mas titulos fallida', e.message);
+      return { state: { ...state, studioLoadingMore: false }, toast: 'No se pudieron cargar mas titulos.' };
+    }
+  }
+
+  if (name === 'back-studios') {
+    studioItemsCache = [];
+    studioCacheSlug = null;
+    return { state: { ...state, selectedStudio: null, studioItems: [] } };
   }
 
   if (name === 'typed') {
