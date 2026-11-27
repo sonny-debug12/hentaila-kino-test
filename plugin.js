@@ -640,12 +640,34 @@ export async function episodes(ref) {
 
   const seriesUrl = abs("/serie/" + slug + "/");
   let sourceUrl = seriesUrl;
-  let html;
+  let html = "";
   let fromSearch = false;
+
+  const normalizedSlug = slug.replace(/[-_]/g, "").toLowerCase();
+
+  const findMatchingCards = (page, pageUrl) =>
+    parseCards(page, pageUrl).filter(c => {
+      const ep = splitEpisode(c.slug);
+      if (!ep) return false;
+
+      const candidate = ep.slug.replace(/[-_]/g, "").toLowerCase();
+
+      return candidate === normalizedSlug ||
+        (candidate.startsWith(normalizedSlug) &&
+         /^\\d+$/.test(candidate.slice(normalizedSlug.length)));
+    });
+
+  let matchingCards = [];
 
   try {
     html = await getText(seriesUrl, BASE + "/");
-  } catch (originalError) {
+    matchingCards = findMatchingCards(html, seriesUrl);
+  } catch (e) {
+    log("VeoHentai serie:", e.message);
+  }
+
+  // Si la p?gina responde vac?a o no contiene episodios, buscar por t?tulo.
+  if (!matchingCards.length) {
     const searchTerm = slug.replace(/_/g, "-")
       .split("-").slice(0, 2).join("-");
 
@@ -654,31 +676,16 @@ export async function episodes(ref) {
     try {
       html = await getText(sourceUrl, BASE + "/");
       fromSearch = true;
-      log("episodios: usando búsqueda alternativa", slug);
+      matchingCards = findMatchingCards(html, sourceUrl);
+      log("episodios: b?squeda alternativa", slug, matchingCards.length);
     } catch (e) {
-      throw kino.error(
-        "not_found",
-        "no se pudo abrir la serie: " + originalError.message
-      );
+      log("VeoHentai b?squeda alternativa:", e.message);
     }
   }
 
   const titleM = fromSearch
     ? null
     : /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-
-  const normalizedSlug = slug.replace(/[-_]/g, "").toLowerCase();
-
-  const matchingCards = parseCards(html, sourceUrl).filter(c => {
-    const ep = splitEpisode(c.slug);
-    if (!ep) return false;
-
-    const candidate = ep.slug.replace(/[-_]/g, "").toLowerCase();
-
-    return candidate === normalizedSlug ||
-      (candidate.startsWith(normalizedSlug) &&
-       /^\d+$/.test(candidate.slice(normalizedSlug.length)));
-  });
 
   const seriesName = fromSearch
     ? seriesTitle(matchingCards[0]?.title || "", slug)
