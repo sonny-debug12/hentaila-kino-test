@@ -50,6 +50,59 @@ function clean(text, max) {
     .slice(0, max || 200);
 }
 
+function extractVeoEpisodeDescription(html) {
+  const scripts = String(html || "").matchAll(
+    /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  );
+
+  for (const match of scripts) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+
+      while (queue.length) {
+        const item = queue.shift();
+        if (!item || typeof item !== "object") continue;
+        if (Array.isArray(item["@graph"])) queue.push(...item["@graph"]);
+
+        const types = Array.isArray(item["@type"])
+          ? item["@type"] : [item["@type"]];
+
+        if (types.includes("VideoObject") && item.description) {
+          return clean(item.description, 3000);
+        }
+      }
+    } catch (_) {}
+  }
+  return "";
+}
+
+function extractHentailaSynopsis(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    for (const node of parsed.nodes || []) {
+      const data = node && node.data;
+      if (!Array.isArray(data) || !data[0]) continue;
+
+      const media = data[data[0].media];
+      if (!media || typeof media !== "object") continue;
+
+      const synopsis = data[media.synopsis];
+      if (typeof synopsis === "string" && synopsis.trim()) {
+        return clean(synopsis, 3000);
+      }
+    }
+  } catch (_) {}
+  return "";
+}
+
+async function getHentailaSynopsis(slug) {
+  const url = HENTAILA_COM + "/media/" + slug + "/__data.json";
+  return extractHentailaSynopsis(
+    await getText(url, HENTAILA_COM + "/")
+  );
+}
+
 function imageUrl(value, pageUrl) {
   if (!value || typeof value !== "string") return undefined;
 
@@ -562,11 +615,19 @@ export async function episodes(ref) {
       throw kino.error("not_found", "esa serie no tiene episodios");
     }
 
+    let overview = "";
+    try {
+      overview = await getHentailaSynopsis(slug);
+    } catch (e) {
+      log("Hentaila synopsis:", e.message);
+    }
+
     return {
       series: {
         title: seriesName,
         poster,
-        genres: ["anime"]
+        genres: ["anime"],
+        overview
       },
       episodes: list
     };
@@ -650,11 +711,31 @@ export async function episodes(ref) {
 
   list.sort((a, b) => a.number - b.number);
 
+  let overview = "";
+  try {
+    const episodeOneUrl = abs("/ver/" + slug + "-episodio-1/");
+    overview = extractVeoEpisodeDescription(
+      await getText(episodeOneUrl, BASE + "/")
+    );
+  } catch (e) {
+    log("VeoHentai synopsis:", e.message);
+  }
+
+  if (!overview) {
+    try {
+      const hentailaSlug = await findHentailaSlug(seriesName);
+      overview = await getHentailaSynopsis(hentailaSlug);
+    } catch (e) {
+      log("Hentaila fallback synopsis:", e.message);
+    }
+  }
+
   return {
     series: {
       title: seriesName,
       poster: seriesPoster,
-      genres: ["anime"]
+      genres: ["anime"],
+      overview
     },
     episodes: list
   };
