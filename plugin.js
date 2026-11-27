@@ -1727,7 +1727,7 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
         { type: 'Column', gap: 0, children: studios.map(studio => ({
             type: 'ListTile',
             key: 'studio-' + studio.slug,
-            title: studio.title + (studio.count ? ' (' + studio.count + ' episodios)' : ''),
+            title: studio.title,
             dense: true,
             onTap: { event: 'studio', arg: studio.slug }
           })) }
