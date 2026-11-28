@@ -406,7 +406,7 @@ function seriesItem(c) {
     title: c.title,
     kind: "series",
     poster: c.poster,
-    genres: ["anime"]
+    genres: ["Anime Hentai"]
   };
 }
 
@@ -417,7 +417,7 @@ function episodeItem(c) {
     title: c.title,
     kind: "movie",
     poster: c.poster,
-    genres: ["anime"]
+    genres: ["Anime Hentai"]
   };
 }
 
@@ -434,7 +434,7 @@ function catalogItems(cards) {
         title: c.title,
         kind: "series",
         poster: c.poster,
-        genres: ["anime"]
+        genres: ["Anime Hentai"]
       });
       continue;
     }
@@ -718,7 +718,7 @@ export async function episodes(ref) {
       series: {
         title: seriesName,
         poster,
-        genres: ["anime"],
+        genres: ["Anime Hentai"],
         overview
       },
       episodes: list
