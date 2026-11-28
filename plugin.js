@@ -231,6 +231,36 @@ function parseStudios(html) {
   return studios;
 }
 
+function extractVeoSeriesMeta(html) {
+  const studioMatch = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/brand\/[^"']*\1[^>]*>([\s\S]*?)<\/a>/i.exec(html);
+  const studio = studioMatch ? clean(studioMatch[2], 100) : "";
+
+  const genres = [];
+  const seen = new Set();
+
+  if (studioMatch) {
+    const paragraphEnd = html.indexOf("</p>", studioMatch.index + studioMatch[0].length);
+    const divStart = paragraphEnd >= 0 ? html.indexOf("<div", paragraphEnd + 4) : -1;
+    const divEnd = divStart >= 0 ? html.indexOf("</div>", divStart) : -1;
+
+    if (divStart >= 0 && divEnd >= 0) {
+      const block = html.slice(divStart, divEnd);
+      const re = /<a\b[^>]*href\s*=\s*(["'])[^"']*\/genero\/([^/"'?#]+)[^"']*\1[^>]*>([\s\S]*?)<\/a>/gi;
+      let m;
+
+      while ((m = re.exec(block))) {
+        const title = clean(m[3].replace(/<span\b[^>]*>[\s\S]*?<\/span>/gi, ""), 100);
+        const key = m[2].toLowerCase();
+        if (!title || seen.has(key)) continue;
+        seen.add(key);
+        genres.push(title);
+      }
+    }
+  }
+
+  return { studio, genres };
+}
+
 function srcsetUrl(value) {
   if (!value) return "";
 
@@ -757,6 +787,10 @@ export async function episodes(ref) {
     ? (matchingCards.find(c => c.poster)?.poster || "")
     : extractImage(html, seriesUrl);
 
+  const seriesMeta = fromSearch
+    ? { studio: "", genres: [] }
+    : extractVeoSeriesMeta(html);
+
   const list = [];
   const seen = new Set();
 
@@ -809,8 +843,10 @@ export async function episodes(ref) {
     series: {
       title: seriesName,
       poster: seriesPoster,
-      genres: ["anime"],
-      overview
+      genres: seriesMeta.genres.length ? seriesMeta.genres : ["anime"],
+      overview: seriesMeta.studio
+        ? "Estudio: " + seriesMeta.studio + (overview ? "\n\n" + overview : "")
+        : overview
     },
     episodes: list
   };
