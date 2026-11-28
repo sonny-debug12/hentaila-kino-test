@@ -843,9 +843,9 @@ export async function episodes(ref) {
     series: {
       title: seriesName,
       poster: seriesPoster,
-      genres: seriesMeta.genres.length ? seriesMeta.genres : ["anime"],
+      genres: seriesMeta.genres.length ? seriesMeta.genres : ["Anime Hentai"],
       overview: seriesMeta.studio
-        ? "Estudio: " + seriesMeta.studio + (overview ? "\n\n" + overview : "")
+        ? "Estudio: " + seriesMeta.studio + (overview ? " - " + overview : "")
         : overview
     },
     episodes: list
